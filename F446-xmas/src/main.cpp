@@ -31,7 +31,7 @@ Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 VL53L0X distanceSensor(&uart4);
 BNO055 gyro(&bno);
 WS2812B led(50);
-MLT8530 speaker;
+// MLT8530 speaker;
 SWITCHUI ui;
 FLOOR_SENSOR floorSensor;
 UNITV cameraLeft(&uart6);
@@ -41,198 +41,129 @@ UNITV cameraRight(&uart2);
 STS3032 servo(&uart5);
 
 #include "./app/sensorApp.h"
+#include "pitches.h"
 
-#define SPEED1 -80
-#define SPEED2 -80
-#define SPEED3 80
-#define SPEED4 80
+#define melodyPin PB6
 
-void VictimDetectionLED(App) {
-    while (1) {
-        static int count = 0;
-        if (cameraLeft.isVictimDetected || cameraRight.isVictimDetected) {
-            led.setUIColor(led.red);
-            led.setLeftColor(led.red);
-            led.setRightColor(led.red);
-            led.setUIBrightness(127 * sin(millis() / 200.0) + 127);
-            led.setRightBrightness(127 * sin(millis() / 200.0) + 127);
-            led.setLeftBrightness(127 * sin(millis() / 200.0) + 127);
+int melody[] = {NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5,
+                NOTE_G5, NOTE_C5, NOTE_D5, NOTE_E5, NOTE_F5, NOTE_F5, NOTE_F5,
+                NOTE_F5, NOTE_F5, NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5,
+                NOTE_D5, NOTE_D5, NOTE_E5, NOTE_D5, NOTE_G5};
 
-            servo.driveAngularVelocity(0, 0);
-        } else {
-            led.setUIBrightness(255);
-            led.setRightBrightness(255);
-            led.setLeftBrightness(255);
+int tempo[] = {8, 8, 4, 8, 8, 4,  8,  8, 8, 8, 2, 8, 8,
+               8, 8, 8, 8, 8, 16, 16, 8, 8, 8, 8, 4, 4};
 
-            led.setLeftColor(led.blue);
-            led.setRightColor(led.blue);
-            led.setUIColor(led.blank);
-        }
+// We wish you a merry Christmas
 
-        led.setTopBrightness(255);
-        for (int i = 0; i < 12; i++) {
-            int color =
-                constrain(map(distanceSensor.val[i], 0, 500, 255, 0), 0, 255);
-            stripTop.setPixelColor(i * 2, 0, 0, color);
-            stripTop.setPixelColor(i * 2 + 1, 0, 0, color);
-        }
-        led.show();
-        app.delay(1);
-    }
-}  // 被災者発見シグナルApp
+int wish_melody[] = {NOTE_B3, NOTE_F4, NOTE_F4, NOTE_G4, NOTE_F4, NOTE_E4,
+                     NOTE_D4, NOTE_D4, NOTE_D4, NOTE_G4, NOTE_G4, NOTE_A4,
+                     NOTE_G4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_E4, NOTE_A4,
+                     NOTE_A4, NOTE_B4, NOTE_A4, NOTE_G4, NOTE_F4, NOTE_D4,
+                     NOTE_B3, NOTE_B3, NOTE_D4, NOTE_G4, NOTE_E4, NOTE_F4};
 
-void topLED(App) {
-    while (1) {
-        // led.setTopBrightness(distanceSensor.val[0] / 8);
-        // led.setTopColor(led.red);
-        // led.show();
-        app.delay(100);
-    }
-}
-int appMode = 0;
+int wish_tempo[] = {4, 4, 8, 8, 8, 8, 4, 4, 4, 4, 8, 8, 8, 8, 4,
+                    4, 4, 4, 8, 8, 8, 8, 4, 4, 8, 8, 4, 4, 4, 2};
 
-void isOnBlack(App) {
-    while (1) {
-        if (((floorSensor.redVal >= 900) && (floorSensor.blueVal >= 900)) &&
-            (floorSensor.greenVal >= 900)) {
-            // led.setTopColor(led.blue);
-            // led.show();
-            app.stop(largeDrive);
-            app.stop(onlyRight);
-            app.stop(onlyLeft);
-            servo.driveAngularVelocity(0, 0);
-            app.delay(500);
+// Santa Claus is coming to town
 
-            angle -= 90;
-            angle %= 360;
-            servo.driveAngularVelocity(-50, 0);
-            app.delay(1000);
+int santa_melody[] = {NOTE_G4, NOTE_E4, NOTE_F4, NOTE_G4, NOTE_G4, NOTE_G4,
+                      NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, NOTE_C5, NOTE_E4,
+                      NOTE_F4, NOTE_G4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_G4,
+                      NOTE_F4, NOTE_F4, NOTE_E4, NOTE_G4, NOTE_C4, NOTE_E4,
+                      NOTE_D4, NOTE_F4, NOTE_B3, NOTE_C4};
 
-            unsigned long timer = millis();
-            while (millis() <= timer + 1300) {
-                servo.drive(0, angle);
-                app.delay(1);
-            }
+int santa_tempo[] = {8, 8, 8, 4, 4, 4, 8, 8, 4, 4, 4, 8, 8, 4,
+                     4, 4, 8, 8, 4, 2, 4, 4, 4, 4, 4, 2, 4, 1};
 
-            switch (appMode) {
-                case 0:
-                    app.start(largeDrive);
-                    break;
-                case 1:
+int song = 0;
 
-                    app.start(onlyRight);
-                    break;
-                case 2:
-
-                    app.start(onlyLeft);
-                    break;
-            }
-        } else {
-            // led.setTopColor(led.red);
-            // led.show();
-            app.delay(10);
-        }
+void buzz(int targetPin, long frequency, long length) {
+    long delayValue = 1000000 / frequency /
+                      2;  // calculate the delay value between transitions
+    //// 1 second's worth of microseconds, divided by the frequency, then split
+    /// in half since / there are two phases to each cycle
+    long numCycles = frequency * length /
+                     1000;  // calculate the number of cycles for proper timing
+    //// multiply frequency, which is really cycles per second, by the number of
+    /// seconds to / get the total number of cycles to produce
+    for (long i = 0; i < numCycles;
+         i++) {  // for the calculated length of time...
+        digitalWrite(
+            targetPin,
+            HIGH);  // write the buzzer pin high to push out the diaphram
+        delayMicroseconds(delayValue);  // wait for the calculated delay value
+        digitalWrite(
+            targetPin,
+            LOW);  // write the buzzer pin low to pull back the diaphram
+        delayMicroseconds(
+            delayValue);  // wait again or the calculated delay value
     }
 }
 
-void isOnBlue(App) {
-    while (1) {
-        if ((floorSensor.blueVal <= floorSensor.greenVal - 100) &&
-            (floorSensor.blueVal <= floorSensor.redVal - 100)) {
-            // led.setTopColor(led.blue);
-            // led.show();
-            app.stop(largeDrive);
-            app.stop(onlyRight);
-            app.stop(onlyLeft);
-            servo.driveAngularVelocity(0, 0);
-            app.delay(5000);
+void sing(int s) {
+    // iterate over the notes of the melody:
+    song = s;
+    if (song == 3) {
+        uart1.println(" 'We wish you a Merry Christmas'");
+        int size = sizeof(wish_melody) / sizeof(int);
+        for (int thisNote = 0; thisNote < size; thisNote++) {
+            // to calculate the note duration, take one second
+            // divided by the note type.
+            // e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+            int noteDuration = 1000 / wish_tempo[thisNote];
 
-            unsigned long timer = millis();
-            while (millis() <= timer + 1300) {
-                servo.drive(0, angle);
-                app.delay(1);
-            }
+            buzz(melodyPin, wish_melody[thisNote], noteDuration);
 
-            servo.driveAngularVelocity(50, 0);
-            app.delay(2000);
+            // to distinguish the notes, set a minimum time between them.
+            // the note's duration + 30% seems to work well:
+            int pauseBetweenNotes = noteDuration * 0.50;
+            delay(pauseBetweenNotes);
 
-            switch (appMode) {
-                case 0:
-                    app.start(largeDrive);
-                    break;
-                case 1:
-
-                    app.start(onlyRight);
-                    break;
-                case 2:
-
-                    app.start(onlyLeft);
-                    break;
-            }
-        } else {
-            // led.setTopColor(led.red);
-            // led.show();
-            app.delay(10);
+            // stop the tone playing:
+            buzz(melodyPin, 0, noteDuration);
         }
-    }
-}
+    } else if (song == 2) {
+        uart1.println(" 'Santa Claus is coming to town'");
+        int size = sizeof(santa_melody) / sizeof(int);
+        for (int thisNote = 0; thisNote < size; thisNote++) {
+            // to calculate the note duration, take one second
+            // divided by the note type.
+            // e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+            int noteDuration = 900 / santa_tempo[thisNote];
 
-void mainApp(App) {
-    // app.start(LEDtktk);
-    while (1) {
-        appMode = 0;
+            buzz(melodyPin, santa_melody[thisNote], noteDuration);
 
-        app.start(isOnBlack);
-        app.start(isOnBlue);
-        app.start(largeDrive);
-        app.delay(30000);
-        app.start(right);
-        app.delay(2000);
-        app.stop(right);
-        // app.start(DriveRight);
-        // app.delay(5000);
-        // app.stop(DriveRight);
+            // to distinguish the notes, set a minimum time between them.
+            // the note's duration + 30% seems to work well:
+            int pauseBetweenNotes = noteDuration * 1.30;
+            delay(pauseBetweenNotes);
 
-        appMode = 1;
-        app.stop(largeDrive);
-        app.start(onlyRight);
-        app.delay(10000);
+            // stop the tone playing:
+            buzz(melodyPin, 0, noteDuration);
+        }
+    } else {
+        uart1.println(" 'Jingle Bells'");
+        int size = sizeof(melody) / sizeof(int);
+        for (int thisNote = 0; thisNote < size; thisNote++) {
+            // to calculate the note duration, take one second
+            // divided by the note type.
+            // e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+            int noteDuration = 1000 / tempo[thisNote];
 
-        appMode = 2;
-        app.stop(onlyRight);
-        app.start(onlyLeft);
-        app.delay(10000);
-        app.stop(onlyLeft);
-        app.start(left);
-        app.delay(2000);
-        app.stop(left);
-    }
+            buzz(melodyPin, melody[thisNote], noteDuration);
 
-    while (1) {
-        // app.start(oooon);
-        // app.delay(10);
-        // servo.driveAngularVelocity(0, 80);
-        // servo.drive(0, 180);
-        // app.start(topLED);
-        // uart1.println(distanceSensor.val[0]);
-        // uart1.println(gyro.deg);
-        //     app.delay(10);
+            // to distinguish the notes, set a minimum time between them.
+            // the note's duration + 30% seems to work well:
+            int pauseBetweenNotes = noteDuration * 0.50;
+            delay(pauseBetweenNotes);
+
+            // stop the tone playing:
+            buzz(melodyPin, 0, noteDuration);
+        }
     }
 }
 
 void setup() {
-    // led.start(24);
-    // led.show();
-
-    // led.leftBootLED(7);
-    // led.show();
-
-    // led.rightBootLED(7);
-    // led.show();
-
-    // led.tktk(100000);
-    // led.show();
-
     uart1.setRx(PA10);
     uart1.setTx(PA9);
     uart1.begin(115200);
@@ -250,7 +181,7 @@ void setup() {
     led.setUIColor(led.yellow);
     led.show();
 
-    speaker.bootSound();
+    // speaker.bootSound();
     led.bootIllumination();
 
     Wire.setSDA(PB9);
@@ -259,25 +190,26 @@ void setup() {
 
     gyro.init();
 
-    app.create(mainApp, firstPriority);
-    app.create(VictimDetectionLED);
-    app.create(inputMonitoringApp, firstPriority);
-    app.create(largeDrive);
-    app.create(onlyRight);
-    app.create(onlyLeft);
-    app.create(isOnBlack);
-    app.create(isOnBlue);
-    app.create(oooon);
-    app.create(right);
-    app.create(random);
-    app.create(VictimDetectionLED);
+    // app.create(mainApp, firstPriority);
+    // app.create(VictimDetectionLED);
+    // app.create(inputMonitoringApp, firstPriority);
+    // app.create(largeDrive);
+    // app.create(onlyRight);
+    // app.create(onlyLeft);
+    // app.create(isOnBlack);
+    // app.create(isOnBlue);
+    // app.create(oooon);
+    // app.create(right);
+    // app.create(random);
+    // app.create(VictimDetectionLED);
 
-    app.start(mainApp);
-    app.start(inputMonitoringApp);
-    app.start(VictimDetectionLED);
-    app.startRTOS();
+    // app.start(mainApp);
+    // app.start(inputMonitoringApp);
+    // app.start(VictimDetectionLED);
+    // app.startRTOS();
 }
 
 void loop() {
-    // Nothing to do.
-}
+    pinMode(PB6, OUTPUT);
+    sing(3);
+} 
