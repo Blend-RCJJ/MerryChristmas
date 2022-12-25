@@ -262,12 +262,6 @@ void left(App) {
     }
 }
 
-void random(App) {
-    while (1) {
-        app.delay(1);
-    }
-}
-
 // void propageRight(App) {
 //     while (1) {
 //         static int angle = 0;
